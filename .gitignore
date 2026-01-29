@@ -54,10 +54,8 @@ out/
 *.azuredevops
 
 # Github
-.github/
+# .github/
 parameters.json
 .azure
 
-
-.env
 comds.md

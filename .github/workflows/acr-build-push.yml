@@ -1,0 +1,60 @@
+name: Build and push image to Azure Container Registry
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Recommended auth method: use an Azure service principal JSON in a single secret.
+      # Create secret AZURE_CREDENTIALS with the output of:
+      # az ad sp create-for-rbac --name "<sp-name>" --role contributor \
+      #   --scopes /subscriptions/<subId>/resourceGroups/<rg>/providers/Microsoft.ContainerRegistry/registries/<acrName> \
+      #   --sdk-auth
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to ACR
+        run: az acr login --name "${{ secrets.ACR_NAME }}"
+
+      # Write the ENV secret into src/.env so it is included in the docker build context (src/)
+      # and can be copied by your Dockerfile (COPY .env .env).
+      - name: Create .env from GitHub secret ENV (not committed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Write exactly the secret contents (supports multi-line)
+          printf '%s' "${{ secrets.ENV }}" > src/.env
+          chmod 600 src/.env
+
+      - name: Build and push image
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="${{ secrets.ACR_LOGIN_SERVER }}/${{ secrets.IMAGE_NAME }}"
+          TAG="${GITHUB_SHA}"
+
+          docker build \
+            --file src/Dockerfile \
+            --tag "${IMAGE}:${TAG}" \
+            --tag "${IMAGE}:latest" \
+            ./src
+
+          docker push "${IMAGE}:${TAG}"
+          docker push "${IMAGE}:latest"
+
+      # Optional hardening: remove .env from the runner workspace after build
+      - name: Cleanup generated .env
+        if: always()
+        run: rm -f src/.env
