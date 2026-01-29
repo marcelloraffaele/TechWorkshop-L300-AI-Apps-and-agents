@@ -1,0 +1,51 @@
+name: Run Customer Loyalty Agent
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "src/app/agents/customerLoyaltyAgent_initializer.py"
+      - "src/prompts/CustomerLoyaltyAgentPrompt.txt"
+      - "src/app/tools/discountLogic.py"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "src/app/agents/customerLoyaltyAgent_initializer.py"
+      - "src/prompts/CustomerLoyaltyAgentPrompt.txt"
+      - "src/app/tools/discountLogic.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  run-customer-loyalty-agent:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "src/requirements.txt"
+
+      # Recommended auth method: use an Azure service principal JSON in a single secret.
+      # Create secret AZURE_CREDENTIALS with the output of:
+      # az ad sp create-for-rbac --name "<sp-name>" --role contributor \
+      #   --scopes /subscriptions/<subId>/resourceGroups/<rg> \
+      #   --sdk-auth
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Install dependencies
+        run: python -m pip install -r src/requirements.txt
+
+      - name: Run Customer Loyalty Agent initializer
+        run: python src/app/agents/customerLoyaltyAgent_initializer.py
