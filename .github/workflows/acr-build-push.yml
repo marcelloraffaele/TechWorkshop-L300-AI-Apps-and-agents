@@ -1,8 +1,9 @@
 name: Build and push image to Azure Container Registry
 
-on:
-  push:
-    branches: [ "main" ]
+on: []
+#on:
+#  push:
+#    branches: [ "main" ]
 
 permissions:
   contents: read
