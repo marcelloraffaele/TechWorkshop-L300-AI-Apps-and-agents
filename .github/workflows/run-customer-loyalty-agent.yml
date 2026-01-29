@@ -44,6 +44,16 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      # Write the ENV secret into src/.env so it is included in the docker build context (src/)
+      # and can be copied by your Dockerfile (COPY .env .env).
+      - name: Create .env from GitHub secret ENV (not committed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Write exactly the secret contents (supports multi-line)
+          printf '%s' "${{ secrets.ENV }}" > src/.env
+          chmod 600 src/.env
+
       - name: Install dependencies
         run: python -m pip install -r src/requirements.txt
 
