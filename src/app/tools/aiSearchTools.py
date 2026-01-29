@@ -21,13 +21,10 @@ EMBEDDING_DEPLOYMENT = os.environ.get("embedding_deployment")
 EMBEDDING_API_KEY = os.environ.get("embedding_api_key")
 EMBEDDING_API_VERSION = os.environ.get("embedding_api_version")
 
-# Validate required Cosmos env vars
-if not COSMOS_ENDPOINT:
-    raise ValueError("COSMOS_ENDPOINT environment variable is not set")
-if not DATABASE_NAME:
-    raise ValueError("DATABASE_NAME environment variable is not set")
-if not CONTAINER_NAME:
-    raise ValueError("CONTAINER_NAME environment variable is not set")
+# Lazily initialize Cosmos resources to avoid import-time failures
+_cosmos_client = None
+_database = None
+_container = None
 
 
 def get_cosmos_client(endpoint: str | None, key: str | None = None):
@@ -53,6 +50,24 @@ def get_cosmos_client(endpoint: str | None, key: str | None = None):
     )
 
 
+def _ensure_cosmos_container():
+    global _cosmos_client, _database, _container
+
+    if _container is not None:
+        return
+
+    if not COSMOS_ENDPOINT:
+        raise ValueError("COSMOS_ENDPOINT environment variable is not set")
+    if not DATABASE_NAME:
+        raise ValueError("DATABASE_NAME environment variable is not set")
+    if not CONTAINER_NAME:
+        raise ValueError("CONTAINER_NAME environment variable is not set")
+
+    _cosmos_client = get_cosmos_client(COSMOS_ENDPOINT, COSMOS_KEY)
+    _database = _cosmos_client.get_database_client(DATABASE_NAME)
+    _container = _database.get_container_client(CONTAINER_NAME)
+
+
 def get_request_embedding(text: str) -> list[float] | None:
     """Call embedding endpoint and return the embedding vector or None on failure."""
     if not EMBEDDING_ENDPOINT or not EMBEDDING_DEPLOYMENT or not EMBEDDING_API_KEY or not EMBEDDING_API_VERSION:
@@ -72,12 +87,6 @@ def get_request_embedding(text: str) -> list[float] | None:
     return embedding
 
 
-# Initialize Cosmos client and container
-_cosmos_client = get_cosmos_client(COSMOS_ENDPOINT, COSMOS_KEY)
-_database = _cosmos_client.get_database_client(DATABASE_NAME)
-_container = _database.get_container_client(CONTAINER_NAME)
-
-
 def product_recommendations(question: str, top_k: int = 8):
     """
     Input:
@@ -86,6 +95,8 @@ def product_recommendations(question: str, top_k: int = 8):
     Output:
         list of product dicts with product information
     """
+
+    _ensure_cosmos_container()
 
     # Generate embedding for the query
     query_vector = get_request_embedding(question)
