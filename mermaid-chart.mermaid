@@ -1,0 +1,72 @@
+flowchart LR
+  %% High-level architecture of the multimodal shopping assistant
+
+  subgraph Client["Client"]
+    UI["Browser UI (chat.html)"]
+  end
+
+  subgraph App["Web App Runtime (FastAPI)"]
+    API["FastAPI server (WebSocket + HTTP)"]
+    WS["/ws (WebSocket session)"]
+    MCPMount["/mcp-inventory/* (mounted MCP SSE app)"]
+    Handoff["Handoff / intent router"]
+    AgentSvc["AgentProcessor factory + cache"]
+  end
+
+  subgraph AgentLayer["Agent Execution"]
+    AgentProc["AgentProcessor (per agent type/thread)"]
+    Toolset["FunctionTools\n(mcp_product_recommendations, mcp_inventory_check, etc.)"]
+  end
+
+  subgraph MCP["MCP Tooling (in-process, SSE)"]
+    MCPClient["MCP client (SSE call_tool)"]
+    MCPServer["MCP server (FastMCP tools)"]
+    Tools["Tool handlers\n(product recs, inventory, discount, image gen)"]
+  end
+
+  subgraph Azure["Azure Services"]
+    Foundry["Azure AI Foundry Project\n(AIProjectClient / Agents + Responses APIs)"]
+    AOAI["Azure OpenAI\n(chat + image + embeddings)"]
+    Cosmos["Azure Cosmos DB (NoSQL)\nProduct catalog + vector search"]
+    Obs["Application Insights / Azure Monitor\n(OpenTelemetry traces)"]
+  end
+
+  subgraph DataPrep["Offline / Setup"]
+    Catalog["data/product_catalog.json"]
+    Ingest["ingest_to_cosmos.py\n(embed + upsert)"]
+  end
+
+  %% Client -> app
+  UI -->|"WebSocket message + optional image URL"| WS
+  WS --> API
+
+  %% Routing + agent calls
+  API --> Handoff
+  Handoff -->|"classify intent"| AOAI
+  API --> AgentSvc
+  AgentSvc --> AgentProc
+  AgentProc -->|"responses.create + conversations.*\n(agent_reference)"| Foundry
+
+  %% Tool calling path (Agent -> MCP -> tools)
+  AgentProc --> Toolset
+  Toolset -->|"SSE tool call"| MCPClient
+  MCPClient --> MCPServer
+  MCPServer --> Tools
+
+  %% Tool implementations -> data/services
+  Tools -->|"vector query"| Cosmos
+  Tools -->|"embeddings + image gen"| AOAI
+
+  %% In-process mount relationship
+  API --- MCPMount
+  MCPMount --- MCPServer
+
+  %% Observability
+  API --> Obs
+  AgentProc --> Obs
+  MCPServer --> Obs
+
+  %% Data preparation pipeline
+  Catalog --> Ingest
+  Ingest -->|"generate embeddings"| AOAI
+  Ingest -->|"upsert products + vectors"| Cosmos
